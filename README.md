@@ -28,7 +28,7 @@ Within the download you'll find following directories and files.
 All dependency library and resource are packed in this package.
 
 ```
-./
+./Vagrant/
 |-pg_config.sh
 |-Vagrantfile
 |-.vagrant/
