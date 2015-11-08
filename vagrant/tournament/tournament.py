@@ -26,6 +26,7 @@ def deletePlayers():
     dbconn = connect();
     cur = dbconn.cursor();
     cur.execute("delete from players;");
+    #Add "bye" as first player for unbalance players.
     cur.execute("insert into players (player_id, player_name) values (0, 'bye');");
     cur.execute("alter sequence players_player_id_seq restart with 1;");
     dbconn.commit();
@@ -85,7 +86,9 @@ def playerStandings():
         group by players.player_id\
         order by win_count desc, players.player_id;");
     win_data = cur.fetchall();
-    
+
+    #Because create a win column with NULL to count is hard to implement on SQL Table,
+    #Find match count by id for python.
     cur.execute("\
         select players.player_id, count(matches.win_id) as match_count\
         from players left join matches\
@@ -111,7 +114,8 @@ def reportMatch(winner, loser):
       winner:  the id number of the player who won
       loser:  the id number of the player who lost
     """
-    
+
+    #Exception for odd players.
     if(winner == 0):
         winner, loser = loser, winner; #Swap winner/loser when meet "bye" id on winner.
     
