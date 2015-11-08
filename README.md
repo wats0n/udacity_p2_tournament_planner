@@ -10,17 +10,17 @@ Add 9th testing extra conditions with odd pairing, initial random matching, and 
 3. Install [Vagrant 1.7.4](https://www.vagrantup.com/downloads.html)
 4. Clone project by 
   * "git clone https://github.com/wats0n/udacity_p2_tournament_planner.git"
-5. Find download project folder\vagrant\
-4. Using "Git bash here" on mouse menu
-5. Execute following command to setup and login VM:
+5. Find "vagrant" folder in download project directory.
+6. Using "Git bash here" on mouse menu
+7. Execute following command to setup and login VM:
   * vagrant up
   * vagrant ssh
-6. In VM prompt, typing following command to project directory:
+8. In VM prompt, typing following command to project directory:
   * cd /vagrant/tournament/
-7. Using below command to setup PostgreSQL
+9. Using below command to setup PostgreSQL
   * psql -f tournament.sql
-8. Executing "python tournament_test.py" to test tournament planner result.
-9. Exit vagrant by "exit" command, exit git-bash environment is "exit" command, too.
+10. Executing "python tournament_test.py" to test tournament planner result.
+11. Exit vagrant by "exit" command, exit git-bash environment is "exit" command, too.
 
 ## What's Included
 
