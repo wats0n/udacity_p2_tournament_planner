@@ -4,7 +4,16 @@
 #
 
 import psycopg2
-import time
+from contextlib import contextmanager
+
+@contextmanager
+def conn_cur():
+    dbconn = connect();
+    cur = dbconn.cursor();
+    yield cur
+    dbconn.commit();
+    cur.close();
+    dbconn.close();
 
 def connect():
     """Connect to the PostgreSQL database.  Returns a database connection."""
@@ -13,35 +22,22 @@ def connect():
 
 def deleteMatches():
     """Remove all the match records from the database."""
-    dbconn = connect();
-    cur = dbconn.cursor();
-    cur.execute("delete from matches;");
-    cur.execute("alter sequence matches_match_id_seq restart with 1;");
-    dbconn.commit();
-    cur.close();
-    dbconn.close();
+    with conn_cur() as cur:
+        cur.execute("delete from matches;");
+        cur.execute("alter sequence matches_match_id_seq restart with 1;");
 
 def deletePlayers():
     """Remove all the player records from the database."""
-    dbconn = connect();
-    cur = dbconn.cursor();
-    cur.execute("delete from players;");
-    #Add "bye" as first player for unbalance players.
-    cur.execute("insert into players (player_id, player_name) values (0, 'bye');");
-    cur.execute("alter sequence players_player_id_seq restart with 1;");
-    dbconn.commit();
-    cur.close();
-    dbconn.close();
+    with conn_cur() as cur:
+        cur.execute("delete from players;");
+        cur.execute("insert into players (player_id, player_name) values (0, 'bye');");
+        cur.execute("alter sequence players_player_id_seq restart with 1;");
 
 def countPlayers():
     """Returns the number of players currently registered."""
-    dbconn = connect();
-    cur = dbconn.cursor();
-    cur.execute("select count(player_id) as player_count from players where player_id > 0;");
-    dbdata = cur.fetchall();
-    dbconn.commit();
-    cur.close();
-    dbconn.close();
+    with conn_cur() as cur:
+        cur.execute("select count(player_id) as player_count from players where player_id > 0;");
+        dbdata = cur.fetchall();
     return dbdata[0][0];
 
 def registerPlayer(name):
@@ -53,14 +49,9 @@ def registerPlayer(name):
     Args:
       name: the player's full name (need not be unique).
     """
-    t = time.strftime('%c', time.localtime())
-    dbconn = connect();
-    cur = dbconn.cursor();
-    cur.execute("insert into players (player_name, submit_time) values (%s, %s);", \
-               (name, t));
-    dbconn.commit();
-    cur.close();
-    dbconn.close();
+    with conn_cur() as cur:
+        cur.execute("insert into players (player_name, submit_time) values (%s, %s);", \
+               (name, "now"));
 
 def playerStandings():
     """Returns a list of the players and their win records, sorted by wins.
@@ -75,36 +66,24 @@ def playerStandings():
         wins: the number of matches the player has won
         matches: the number of matches the player has played
     """
-    ret_stand = [];
-    dbconn = connect();
-    cur = dbconn.cursor();
-    cur.execute("\
-        select players.player_id, players.player_name, count(matches.win_id) as win_count\
-        from players left join matches\
-        on (players.player_id = matches.win_id)\
-        where player_id > 0\
-        group by players.player_id\
-        order by win_count desc, players.player_id;");
-    win_data = cur.fetchall();
+    with conn_cur() as cur:
+        cur.execute("\
+            drop view if exists win_view;\
+            drop view if exists match_view;\
+            create view win_view as select players.player_id, count(matches.win_id) as win_count\
+                from players left join matches\
+                on players.player_id = matches.win_id and players.player_id > 0\
+                group by players.player_id;\
+            create view match_view as select players.player_id, count(matches.match_id) as match_count\
+                from players left join matches\
+                on (players.player_id = matches.win_id or players.player_id = matches.lose_id) and players.player_id > 0\
+                group by players.player_id;\
+            select players.player_id, players.player_name, win_view.win_count, match_view.match_count\
+                from players, win_view, match_view\
+                where (players.player_id = win_view.player_id and players.player_id = match_view.player_id) and players.player_id > 0\
+                order by win_view.win_count desc, players.player_id;");
+        ret_stand = cur.fetchall();
 
-    #Because create a win column with NULL to count is hard to implement on SQL Table,
-    #Find match count by id for python.
-    cur.execute("\
-        select players.player_id, count(matches.win_id) as match_count\
-        from players left join matches\
-        on (players.player_id = matches.win_id or players.player_id = matches.lose_id)\
-        where player_id > 0\
-        group by players.player_id\
-        order by players.player_id;");
-    match_data = cur.fetchall();
-    
-    cur.close();
-    dbconn.close();
-    
-    for w in win_data:
-        for m in match_data:
-            if m[0] == w[0]:
-                ret_stand.append((w[0], w[1], w[2], m[1]));
     return ret_stand;
     
 def reportMatch(winner, loser):
@@ -114,19 +93,13 @@ def reportMatch(winner, loser):
       winner:  the id number of the player who won
       loser:  the id number of the player who lost
     """
-
-    #Exception for odd players.
+    
     if(winner == 0):
         winner, loser = loser, winner; #Swap winner/loser when meet "bye" id on winner.
     
-    t = time.strftime('%c', time.localtime())
-    dbconn = connect();
-    cur = dbconn.cursor();
-    cur.execute("insert into matches (win_id, lose_id, submit_time) values (%s, %s, %s);", \
-               (winner, loser, t));
-    dbconn.commit();
-    cur.close();
-    dbconn.close();
+    with conn_cur() as cur:
+        cur.execute("insert into matches (win_id, lose_id, submit_time) values (%s, %s, %s);", \
+               (winner, loser, "now"));
  
 def swissPairings():
     """Returns a list of pairs of players for the next round of a match.
@@ -144,19 +117,15 @@ def swissPairings():
         name2: the second player's name
     """
     ret_pair = [];
-    dbconn = connect();
-    cur = dbconn.cursor();
-    cur.execute("\
+    with conn_cur() as cur:
+        cur.execute("\
         select players.player_id, players.player_name, count(matches.win_id) as win_count\
-        from players left join matches\
-        on (players.player_id = matches.win_id)\
-        where player_id > 0\
-        group by players.player_id\
-        order by win_count desc, players.player_id;");
-    win_data = cur.fetchall();
-    
-    cur.close();
-    dbconn.close();
+            from players left join matches\
+            on (players.player_id = matches.win_id)\
+            where player_id > 0\
+            group by players.player_id\
+            order by win_count desc, players.player_id;");
+        win_data = cur.fetchall();
     
     for i in range((len(win_data)/2)):
         ret_pair.append((win_data[i*2][0], win_data[i*2][1], win_data[i*2+1][0], win_data[i*2+1][1]));
